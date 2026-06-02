@@ -1,0 +1,946 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from scipy import stats
+
+
+class TTestToolkitApp:
+
+    def __init__(self, root):
+
+        self.root = root
+        self.root.title("T-Test Statistical Toolkit")
+        self.root.geometry("1350x850")
+
+        self.df = None
+        self.alpha = 0.05
+
+        self.build_ui()
+
+    # =========================================================
+    # UI
+    # =========================================================
+
+    def build_ui(self):
+
+        main = ttk.Frame(self.root, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        # =====================================================
+        # LEFT PANEL
+        # =====================================================
+
+        left = ttk.Frame(main, width=360)
+        left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        left.pack_propagate(False)
+
+        # =====================================================
+        # RIGHT PANEL
+        # =====================================================
+
+        right = ttk.Frame(main)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # =====================================================
+        # TITLE
+        # =====================================================
+
+        title = ttk.Label(
+            left,
+            text="T-Test Statistical Toolkit",
+            font=("Arial", 18, "bold")
+        )
+
+        title.pack(anchor="w", pady=(0, 10))
+
+        # =====================================================
+        # FILE BUTTON
+        # =====================================================
+
+        ttk.Button(
+            left,
+            text="Upload CSV / Excel File",
+            command=self.load_file
+        ).pack(fill=tk.X, pady=4)
+
+        self.file_label = ttk.Label(
+            left,
+            text="No file loaded",
+            wraplength=330
+        )
+
+        self.file_label.pack(anchor="w", pady=(2, 10))
+
+        # =====================================================
+        # DATA DESCRIPTION
+        # =====================================================
+
+        ttk.Label(
+            left,
+            text="0. Data Description and Source",
+            font=("Arial", 10, "bold")
+        ).pack(anchor="w")
+
+        self.desc_text = tk.Text(left, height=5)
+
+        self.desc_text.pack(fill=tk.X, pady=(4, 10))
+
+        self.desc_text.insert(
+            "1.0",
+            "Dataset source: Enter source here.\n"
+            "Description: Enter dataset description here."
+        )
+
+        # =====================================================
+        # TEST TYPE
+        # =====================================================
+
+        ttk.Label(
+            left,
+            text="Choose t-test type",
+            font=("Arial", 10, "bold")
+        ).pack(anchor="w")
+
+        self.test_type = tk.StringVar(
+            value="One-Sample t-Test"
+        )
+
+        dropdown = ttk.Combobox(
+            left,
+            textvariable=self.test_type,
+            values=[
+                "One-Sample t-Test",
+                "Independent Two-Sample t-Test",
+                "Paired t-Test"
+            ],
+            state="readonly"
+        )
+
+        dropdown.pack(fill=tk.X, pady=4)
+
+        dropdown.bind(
+            "<<ComboboxSelected>>",
+            lambda e: self.update_controls()
+        )
+
+        ttk.Separator(left).pack(fill=tk.X, pady=10)
+
+        # =====================================================
+        # CONTROLS FRAME
+        # =====================================================
+
+        self.controls_frame = ttk.Frame(left)
+        self.controls_frame.pack(fill=tk.X)
+
+        self.update_controls()
+
+        ttk.Separator(left).pack(fill=tk.X, pady=10)
+
+        # =====================================================
+        # ALTERNATIVE HYPOTHESIS
+        # =====================================================
+
+        ttk.Label(
+            left,
+            text="Alternative Hypothesis",
+            font=("Arial", 10, "bold")
+        ).pack(anchor="w")
+
+        self.alt_var = tk.StringVar(
+            value="two-sided"
+        )
+
+        ttk.Combobox(
+            left,
+            textvariable=self.alt_var,
+            values=["two-sided", "greater", "less"],
+            state="readonly"
+        ).pack(fill=tk.X, pady=4)
+
+        # =====================================================
+        # ALPHA
+        # =====================================================
+
+        ttk.Label(
+            left,
+            text="Significance Level α",
+            font=("Arial", 10, "bold")
+        ).pack(anchor="w", pady=(8, 0))
+
+        self.alpha_var = tk.StringVar(value="0.05")
+
+        ttk.Entry(
+            left,
+            textvariable=self.alpha_var
+        ).pack(fill=tk.X, pady=4)
+
+        # =====================================================
+        # RUN BUTTON
+        # =====================================================
+
+        ttk.Button(
+            left,
+            text="Run Analysis",
+            command=self.run_analysis
+        ).pack(fill=tk.X, pady=(12, 4))
+
+        # =====================================================
+        # NOTEBOOK
+        # =====================================================
+
+        self.notebook = ttk.Notebook(right)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+        self.results_tab = ttk.Frame(self.notebook)
+        self.plot_tab = ttk.Frame(self.notebook)
+        self.assumption_tab = ttk.Frame(self.notebook)
+        self.conclusion_tab = ttk.Frame(self.notebook)
+
+        self.notebook.add(self.results_tab, text="Results")
+        self.notebook.add(self.plot_tab, text="Visualization")
+        self.notebook.add(self.assumption_tab, text="Assumption Checks")
+        self.notebook.add(self.conclusion_tab, text="Conclusion")
+
+        # =====================================================
+        # RESULTS TEXT
+        # =====================================================
+
+        self.results_text = tk.Text(
+            self.results_tab,
+            font=("Consolas", 10)
+        )
+
+        self.results_text.pack(fill=tk.BOTH, expand=True)
+
+        # =====================================================
+        # ASSUMPTION TEXT
+        # =====================================================
+
+        self.assumption_text = tk.Text(
+            self.assumption_tab,
+            font=("Consolas", 10)
+        )
+
+        self.assumption_text.pack(fill=tk.BOTH, expand=True)
+
+        # =====================================================
+        # CONCLUSION TEXT
+        # =====================================================
+
+        self.conclusion_text = tk.Text(
+            self.conclusion_tab,
+            font=("Arial", 11)
+        )
+
+        self.conclusion_text.pack(fill=tk.BOTH, expand=True)
+
+    # =========================================================
+    # FILE LOADING
+    # =========================================================
+
+    def load_file(self):
+
+        path = filedialog.askopenfilename(
+            filetypes=[
+                ("CSV Files", "*.csv"),
+                ("Excel Files", "*.xlsx *.xls")
+            ]
+        )
+
+        if not path:
+            return
+
+        try:
+
+            if path.endswith(".csv"):
+                self.df = pd.read_csv(path)
+
+            else:
+                self.df = pd.read_excel(path)
+
+            self.file_label.config(
+                text=f"Loaded: {path.split('/')[-1]}"
+            )
+
+            self.update_controls()
+
+            messagebox.showinfo(
+                "Success",
+                "Dataset loaded successfully."
+            )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Error",
+                str(e)
+            )
+
+    # =========================================================
+    # NUMERIC COLUMNS
+    # =========================================================
+
+    def get_numeric_columns(self):
+
+        if self.df is None:
+            return []
+
+        return list(
+            self.df.select_dtypes(include=[np.number]).columns
+        )
+
+    # =========================================================
+    # UPDATE CONTROLS
+    # =========================================================
+
+    def update_controls(self):
+
+        for widget in self.controls_frame.winfo_children():
+            widget.destroy()
+
+        ttk.Label(
+            self.controls_frame,
+            text="Column Selection",
+            font=("Arial", 10, "bold")
+        ).pack(anchor="w")
+
+        self.col1_var = tk.StringVar()
+        self.col2_var = tk.StringVar()
+        self.group_var = tk.StringVar()
+        self.mu_var = tk.StringVar(value="0")
+
+        numeric_columns = self.get_numeric_columns()
+
+        all_columns = (
+            list(self.df.columns)
+            if self.df is not None
+            else []
+        )
+
+        test = self.test_type.get()
+
+        # =====================================================
+        # INDEPENDENT TEST
+        # =====================================================
+
+        if test == "Independent Two-Sample t-Test":
+
+            ttk.Label(
+                self.controls_frame,
+                text="Numeric Test Column"
+            ).pack(anchor="w", pady=(6, 0))
+
+            self.col1_combo = ttk.Combobox(
+                self.controls_frame,
+                textvariable=self.col1_var,
+                values=numeric_columns,
+                state="readonly"
+            )
+
+            self.col1_combo.pack(fill=tk.X, pady=3)
+
+            if numeric_columns:
+                self.col1_var.set(numeric_columns[0])
+
+            ttk.Label(
+                self.controls_frame,
+                text="Grouping Column"
+            ).pack(anchor="w", pady=(6, 0))
+
+            self.group_combo = ttk.Combobox(
+                self.controls_frame,
+                textvariable=self.group_var,
+                values=all_columns,
+                state="readonly"
+            )
+
+            self.group_combo.pack(fill=tk.X, pady=3)
+
+            if all_columns:
+                self.group_var.set(all_columns[0])
+
+        # =====================================================
+        # ONE SAMPLE + PAIRED
+        # =====================================================
+
+        else:
+
+            ttk.Label(
+                self.controls_frame,
+                text="Column 1"
+            ).pack(anchor="w", pady=(6, 0))
+
+            self.col1_combo = ttk.Combobox(
+                self.controls_frame,
+                textvariable=self.col1_var,
+                values=numeric_columns,
+                state="readonly"
+            )
+
+            self.col1_combo.pack(fill=tk.X, pady=3)
+
+            if numeric_columns:
+                self.col1_var.set(numeric_columns[0])
+
+            if test == "Paired t-Test":
+
+                ttk.Label(
+                    self.controls_frame,
+                    text="Column 2"
+                ).pack(anchor="w", pady=(6, 0))
+
+                self.col2_combo = ttk.Combobox(
+                    self.controls_frame,
+                    textvariable=self.col2_var,
+                    values=numeric_columns,
+                    state="readonly"
+                )
+
+                self.col2_combo.pack(fill=tk.X, pady=3)
+
+                if len(numeric_columns) > 1:
+                    self.col2_var.set(numeric_columns[1])
+
+            if test == "One-Sample t-Test":
+
+                ttk.Label(
+                    self.controls_frame,
+                    text="Hypothesized Mean μ₀"
+                ).pack(anchor="w", pady=(6, 0))
+
+                ttk.Entry(
+                    self.controls_frame,
+                    textvariable=self.mu_var
+                ).pack(fill=tk.X, pady=3)
+
+    # =========================================================
+    # RUN ANALYSIS
+    # =========================================================
+
+    def run_analysis(self):
+
+        if self.df is None:
+
+            messagebox.showwarning(
+                "No Data",
+                "Please upload a dataset first."
+            )
+
+            return
+
+        self.alpha = float(self.alpha_var.get())
+
+        test = self.test_type.get()
+
+        if test == "One-Sample t-Test":
+            self.run_one_sample()
+
+        elif test == "Independent Two-Sample t-Test":
+            self.run_independent()
+
+        else:
+            self.run_paired()
+
+    # =========================================================
+    # ONE SAMPLE
+    # =========================================================
+
+    def run_one_sample(self):
+
+        col = self.col1_var.get()
+
+        data = pd.to_numeric(
+            self.df[col],
+            errors="coerce"
+        ).dropna()
+
+        mu0 = float(self.mu_var.get())
+
+        result = stats.ttest_1samp(
+            data,
+            popmean=mu0
+        )
+
+        mean = data.mean()
+
+        ci = stats.t.interval(
+            0.95,
+            len(data)-1,
+            loc=mean,
+            scale=stats.sem(data)
+        )
+
+        shapiro = stats.shapiro(data)
+
+        self.show_results(
+            "One-Sample t-Test",
+            result,
+            len(data)-1,
+            mean,
+            ci
+        )
+
+        self.show_assumptions_one_sample(
+            shapiro
+        )
+
+        self.plot_one_sample(data, mu0)
+
+    # =========================================================
+    # INDEPENDENT
+    # =========================================================
+
+    def run_independent(self):
+
+        value_col = self.col1_var.get()
+        group_col = self.group_var.get()
+
+        temp_df = self.df[
+            [value_col, group_col]
+        ].dropna()
+
+        groups = temp_df[group_col].unique()
+
+        if len(groups) != 2:
+
+            messagebox.showerror(
+                "Error",
+                "Grouping column must contain exactly 2 groups."
+            )
+
+            return
+
+        group1 = groups[0]
+        group2 = groups[1]
+
+        x = pd.to_numeric(
+            temp_df[
+                temp_df[group_col] == group1
+            ][value_col],
+            errors="coerce"
+        ).dropna()
+
+        y = pd.to_numeric(
+            temp_df[
+                temp_df[group_col] == group2
+            ][value_col],
+            errors="coerce"
+        ).dropna()
+
+        shapiro_x = stats.shapiro(x)
+        shapiro_y = stats.shapiro(y)
+
+        levene = stats.levene(x, y)
+
+        equal_var = levene.pvalue >= self.alpha
+
+        result = stats.ttest_ind(
+            x,
+            y,
+            equal_var=equal_var
+        )
+
+        diff = x.mean() - y.mean()
+
+        se = np.sqrt(
+            x.var(ddof=1)/len(x)
+            +
+            y.var(ddof=1)/len(y)
+        )
+
+        df = len(x) + len(y) - 2
+
+        critical = stats.t.ppf(
+            0.975,
+            df
+        )
+
+        ci = (
+            diff - critical * se,
+            diff + critical * se
+        )
+
+        self.show_results(
+            "Independent Two-Sample t-Test",
+            result,
+            df,
+            diff,
+            ci
+        )
+
+        self.show_assumptions_independent(
+            shapiro_x,
+            shapiro_y,
+            levene
+        )
+
+        self.plot_independent(
+            x,
+            y,
+            str(group1),
+            str(group2)
+        )
+
+    # =========================================================
+    # PAIRED
+    # =========================================================
+
+    def run_paired(self):
+
+        col1 = self.col1_var.get()
+        col2 = self.col2_var.get()
+
+        pair_df = self.df[
+            [col1, col2]
+        ].dropna()
+
+        x = pd.to_numeric(
+            pair_df[col1],
+            errors="coerce"
+        )
+
+        y = pd.to_numeric(
+            pair_df[col2],
+            errors="coerce"
+        )
+
+        result = stats.ttest_rel(x, y)
+
+        diff = x - y
+
+        mean_diff = diff.mean()
+
+        ci = stats.t.interval(
+            0.95,
+            len(diff)-1,
+            loc=mean_diff,
+            scale=stats.sem(diff)
+        )
+
+        shapiro = stats.shapiro(diff)
+
+        self.show_results(
+            "Paired t-Test",
+            result,
+            len(diff)-1,
+            mean_diff,
+            ci
+        )
+
+        self.show_assumptions_paired(
+            shapiro
+        )
+
+        self.plot_paired(x, y)
+
+    # =========================================================
+    # RESULTS
+    # =========================================================
+
+    def show_results(
+        self,
+        title,
+        result,
+        df,
+        mean,
+        ci
+    ):
+
+        self.results_text.delete("1.0", tk.END)
+
+        decision = (
+            "Reject H₀"
+            if result.pvalue < self.alpha
+            else "Fail to Reject H₀"
+        )
+
+        output = f"""
+{title}
+
+==================================================
+
+t-statistic:
+{result.statistic:.4f}
+
+Degrees of Freedom:
+{df:.4f}
+
+p-value:
+{result.pvalue:.6f}
+
+95% Confidence Interval:
+[{ci[0]:.4f}, {ci[1]:.4f}]
+
+Significance Level α:
+{self.alpha}
+
+Decision:
+{decision}
+
+==================================================
+"""
+
+        self.results_text.insert(
+            tk.END,
+            output
+        )
+
+        self.conclusion_text.delete("1.0", tk.END)
+
+        self.conclusion_text.insert(
+            tk.END,
+            f"At α = {self.alpha}, "
+            f"the test produced a p-value of "
+            f"{result.pvalue:.6f}. "
+            f"The decision is: {decision}."
+        )
+
+    # =========================================================
+    # ASSUMPTIONS
+    # =========================================================
+
+    def show_assumptions_one_sample(self, shapiro):
+
+        self.assumption_text.delete("1.0", tk.END)
+
+        interpretation = (
+            "Data appears approximately normal."
+            if shapiro.pvalue > self.alpha
+            else "Data may violate normality."
+        )
+
+        output = f"""
+ONE-SAMPLE T-TEST ASSUMPTION CHECKS
+
+==================================================
+
+Shapiro-Wilk Test for Normality
+
+Statistic:
+{shapiro.statistic:.4f}
+
+p-value:
+{shapiro.pvalue:.6f}
+
+Interpretation:
+{interpretation}
+
+==================================================
+"""
+
+        self.assumption_text.insert(tk.END, output)
+
+    def show_assumptions_independent(
+        self,
+        shapiro_x,
+        shapiro_y,
+        levene
+    ):
+
+        self.assumption_text.delete("1.0", tk.END)
+
+        normal_x = (
+            "Group 1 appears approximately normal."
+            if shapiro_x.pvalue > self.alpha
+            else "Group 1 may violate normality."
+        )
+
+        normal_y = (
+            "Group 2 appears approximately normal."
+            if shapiro_y.pvalue > self.alpha
+            else "Group 2 may violate normality."
+        )
+
+        variance_text = (
+            "Equal variances can be assumed."
+            if levene.pvalue > self.alpha
+            else "Variances may be unequal."
+        )
+
+        output = f"""
+INDEPENDENT TWO-SAMPLE ASSUMPTION CHECKS
+
+==================================================
+
+Shapiro-Wilk Test (Group 1)
+
+Statistic:
+{shapiro_x.statistic:.4f}
+
+p-value:
+{shapiro_x.pvalue:.6f}
+
+Interpretation:
+{normal_x}
+
+--------------------------------------------------
+
+Shapiro-Wilk Test (Group 2)
+
+Statistic:
+{shapiro_y.statistic:.4f}
+
+p-value:
+{shapiro_y.pvalue:.6f}
+
+Interpretation:
+{normal_y}
+
+--------------------------------------------------
+
+Levene's Test for Equality of Variances
+
+Statistic:
+{levene.statistic:.4f}
+
+p-value:
+{levene.pvalue:.6f}
+
+Interpretation:
+{variance_text}
+
+==================================================
+"""
+
+        self.assumption_text.insert(tk.END, output)
+
+    def show_assumptions_paired(self, shapiro):
+
+        self.assumption_text.delete("1.0", tk.END)
+
+        interpretation = (
+            "Differences appear approximately normal."
+            if shapiro.pvalue > self.alpha
+            else "Differences may violate normality."
+        )
+
+        output = f"""
+PAIRED T-TEST ASSUMPTION CHECKS
+
+==================================================
+
+Shapiro-Wilk Test for Paired Differences
+
+Statistic:
+{shapiro.statistic:.4f}
+
+p-value:
+{shapiro.pvalue:.6f}
+
+Interpretation:
+{interpretation}
+
+==================================================
+"""
+
+        self.assumption_text.insert(tk.END, output)
+
+    # =========================================================
+    # PLOTS
+    # =========================================================
+
+    def clear_plot(self):
+
+        for widget in self.plot_tab.winfo_children():
+            widget.destroy()
+
+    def show_plot(self, fig):
+
+        self.clear_plot()
+
+        canvas = FigureCanvasTkAgg(
+            fig,
+            master=self.plot_tab
+        )
+
+        canvas.draw()
+
+        canvas.get_tk_widget().pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+    def plot_one_sample(self, data, mu0):
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        ax.hist(
+            data,
+            bins=20,
+            edgecolor="black"
+        )
+
+        ax.axvline(
+            mu0,
+            linestyle="--",
+            linewidth=2,
+            color="red"
+        )
+
+        ax.set_title("One-Sample t-Test")
+
+        self.show_plot(fig)
+
+    def plot_independent(self, x, y, g1, g2):
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        ax.boxplot(
+            [x, y],
+            labels=[g1, g2]
+        )
+
+        ax.set_title(
+            "Independent Two-Sample t-Test"
+        )
+
+        self.show_plot(fig)
+
+    def plot_paired(self, x, y):
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+        ax.scatter(
+            x,
+            y,
+            color="blue"
+        )
+
+        min_val = min(x.min(), y.min())
+        max_val = max(x.max(), y.max())
+
+        ax.plot(
+            [min_val, max_val],
+            [min_val, max_val],
+            linestyle="--",
+            color="red",
+            linewidth=2,
+            label="Before = After"
+        )
+
+        ax.legend()
+
+        ax.set_title("Paired t-Test")
+
+        ax.set_xlabel("Before Scores")
+        ax.set_ylabel("After Scores")
+
+        self.show_plot(fig)
+
+
+# =============================================================
+# MAIN
+# =============================================================
+
+if __name__ == "__main__":
+
+    root = tk.Tk()
+
+    app = TTestToolkitApp(root)
+
+    root.mainloop()
